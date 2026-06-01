@@ -1,8 +1,23 @@
 import requests
 import time
 import datetime
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TOKEN = "8809756992:AAEq_CYIMiYcN4VOXFmYvUEjN3YT1TzH9VU"
+
+# Простой веб-сервер чтобы Render не останавливал бота
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+    def log_message(self, format, *args):
+        pass  # отключаем логи сервера
+
+def run_server():
+    server = HTTPServer(('0.0.0.0', 8080), Handler)
+    server.serve_forever()
 
 def get_chat_id():
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -88,25 +103,14 @@ def analyze():
 
     return signal, reasons, price, ema20, ema50, rsi
 
-def main():
+def trading_loop():
     print("🤖 Бот запущен, ищем chat_id...")
-
     chat_id = None
-    attempts = 0
-    while not chat_id and attempts < 20:
+
+    while not chat_id:
         chat_id = get_chat_id()
         if not chat_id:
-            print(f"Попытка {attempts+1}: chat_id не найден, ждём...")
-            time.sleep(5)
-        attempts += 1
-
-    if not chat_id:
-        print("❌ chat_id не найден. Напиши /start своему боту в Telegram!")
-        # Продолжаем работать и пробуем снова
-        while True:
-            chat_id = get_chat_id()
-            if chat_id:
-                break
+            print("chat_id не найден, ждём 10 сек...")
             time.sleep(10)
 
     print(f"✅ chat_id найден: {chat_id}")
@@ -114,7 +118,7 @@ def main():
         "🤖 <b>Бот сигналов запущен!</b>\n\n"
         "📊 Актив: <b>Bitcoin OTC</b>\n"
         "⏱ Анализ каждые 5 минут\n"
-        "☁️ Работает 24/7 на сервере Render\n\n"
+        "☁️ Работает 24/7 на сервере\n\n"
         "Жди сигналов... 🚀"
     )
 
@@ -141,9 +145,9 @@ def main():
 
                 send_message(chat_id, msg)
                 last_signal = signal
-                print(f"✅ Сигнал отправлен: {signal} | BTC: ${price:,.0f} | RSI: {rsi:.1f}")
+                print(f"✅ Сигнал: {signal} | BTC: ${price:,.0f} | RSI: {rsi:.1f}")
             else:
-                print(f"[{now}] Нет сигнала | BTC: ${price:,.0f} | RSI: {rsi:.1f} | EMA20: ${ema20:,.0f} | EMA50: ${ema50:,.0f}")
+                print(f"[{now}] Нет сигнала | BTC: ${price:,.0f} | RSI: {rsi:.1f}")
 
             time.sleep(300)
 
@@ -152,4 +156,10 @@ def main():
             time.sleep(60)
 
 if __name__ == "__main__":
-    main()
+    # Запускаем веб-сервер в отдельном потоке
+    t = threading.Thread(target=run_server, daemon=True)
+    t.start()
+    print("✅ Веб-сервер запущен на порту 8080")
+
+    # Запускаем торгового бота
+    trading_loop()
