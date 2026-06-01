@@ -6,19 +6,26 @@ TOKEN = "8809756992:AAEq_CYIMiYcN4VOXFmYvUEjN3YT1TzH9VU"
 
 def get_chat_id():
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-    r = requests.get(url).json()
     try:
-        return r['result'][-1]['message']['chat']['id']
+        r = requests.get(url, timeout=10).json()
+        for result in reversed(r.get('result', [])):
+            try:
+                return result['message']['chat']['id']
+            except:
+                continue
     except:
         return None
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'})
+    try:
+        requests.post(url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}, timeout=10)
+    except Exception as e:
+        print(f"Send error: {e}")
 
 def get_btc_data():
     url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=60"
-    r = requests.get(url).json()
+    r = requests.get(url, timeout=10).json()
     closes = [float(c[4]) for c in r]
     return closes
 
@@ -56,14 +63,14 @@ def analyze():
         signal = "⬆️ ВВЕРХ (BUY)"
         reasons = [
             "✅ EMA20 выше EMA50 — бычий тренд",
-            f"✅ RSI = {rsi:.1f} — хорошая зона входа",
+            f"✅ RSI = {rsi:.1f} — хорошая зона",
             "✅ Цена выше EMA20"
         ]
     elif ema20 < ema50 and price < ema20 and 35 < rsi < 55:
         signal = "⬇️ ВНИЗ (SELL)"
         reasons = [
             "✅ EMA20 ниже EMA50 — медвежий тренд",
-            f"✅ RSI = {rsi:.1f} — хорошая зона входа",
+            f"✅ RSI = {rsi:.1f} — хорошая зона",
             "✅ Цена ниже EMA20"
         ]
     elif rsi >= 70:
@@ -82,26 +89,32 @@ def analyze():
     return signal, reasons, price, ema20, ema50, rsi
 
 def main():
-    print("🤖 Бот запущен...")
-    chat_id = None
+    print("🤖 Бот запущен, ищем chat_id...")
 
-    # Получаем chat_id
-    for _ in range(10):
+    chat_id = None
+    attempts = 0
+    while not chat_id and attempts < 20:
         chat_id = get_chat_id()
-        if chat_id:
-            break
-        time.sleep(3)
+        if not chat_id:
+            print(f"Попытка {attempts+1}: chat_id не найден, ждём...")
+            time.sleep(5)
+        attempts += 1
 
     if not chat_id:
-        print("❌ Не удалось получить chat_id")
-        return
+        print("❌ chat_id не найден. Напиши /start своему боту в Telegram!")
+        # Продолжаем работать и пробуем снова
+        while True:
+            chat_id = get_chat_id()
+            if chat_id:
+                break
+            time.sleep(10)
 
-    print(f"✅ Подключён к chat_id: {chat_id}")
-    send_message(chat_id, 
+    print(f"✅ chat_id найден: {chat_id}")
+    send_message(chat_id,
         "🤖 <b>Бот сигналов запущен!</b>\n\n"
         "📊 Актив: <b>Bitcoin OTC</b>\n"
-        "⏱ Интервал анализа: каждые 5 минут\n"
-        "☁️ Работает 24/7 на сервере\n\n"
+        "⏱ Анализ каждые 5 минут\n"
+        "☁️ Работает 24/7 на сервере Render\n\n"
         "Жди сигналов... 🚀"
     )
 
@@ -128,9 +141,9 @@ def main():
 
                 send_message(chat_id, msg)
                 last_signal = signal
-                print(f"✅ Сигнал отправлен: {signal}")
+                print(f"✅ Сигнал отправлен: {signal} | BTC: ${price:,.0f} | RSI: {rsi:.1f}")
             else:
-                print(f"[{now}] Нет сигнала | BTC: ${price:,.0f} | RSI: {rsi:.1f}")
+                print(f"[{now}] Нет сигнала | BTC: ${price:,.0f} | RSI: {rsi:.1f} | EMA20: ${ema20:,.0f} | EMA50: ${ema50:,.0f}")
 
             time.sleep(300)
 
